@@ -3,6 +3,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
     <title>Histogram</title>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet' type='text/css'>
     <script type="text/javascript" src="http://mbostock.github.com/d3/d3.v2.min.js"></script>
     <style type="text/css">
 body {
@@ -68,7 +69,7 @@ circle {
             Initialize Applicants
     </button>
 </div>
-<div>
+<div style="text-align:center">
     <div id="chart" style="display:inline-block"></div>
 </div>
 
@@ -79,9 +80,9 @@ paramConfigs= [
   { text: 'Initial applicants',  name: 'numInitialCandidates', min: 100, max: 10000, value: 5000},
   { text: 'Avg CRS w/o 600 bonus points', name: 'muLow', min: 0, max: 600, value: 400 },
   { text: 'Avg CRS with 600 bonus points', name: 'muHigh', min: 600, max: 1200, value: 950 },
-  { text: 'Std dev CRS points', name: 'stddev', min: 20, max: 200, value: 80 },
-  { text: 'New applicants w/o 600 bonus pts', name: 'numNewLow', min: 0, max: 2000, value: 800 },
-  { text: 'New applicants with 600 bonus pts', name: 'numNewHigh', min: 0, max: 2000, value: 500 },
+  { text: 'Std dev CRS points', name: 'stddev', min: 20, max: 200, value: 60 },
+  { text: 'New applicants w/o 600 bonus pts', name: 'numNewLow', min: 0, max: 2000, value: 1200 },
+  { text: 'New applicants with 600 bonus pts', name: 'numNewHigh', min: 0, max: 2000, value: 700 },
   { text: 'Number of ITAs issued', name: 'numITA', min: 0, max: 5000, value: 800 },
   { text: 'Animation Delay', name: 'delay', min: 0, max: 200, value: 50 },
 ];
@@ -92,6 +93,7 @@ var parameters = d3.select('#parameters')
     .enter()
     .append('div')
     .style('display', 'inline-block')
+    .style('font-family', 'roboto')
     .style('margin', '5px');
             
 parameters.append('label')
@@ -159,18 +161,18 @@ generator = function() {
 
 var exitDelay = 1000,
     w = 800,
-    h = 600,
+    h = 500,
     binWidth = w/bins,
     radius = 1.5,
     padding = 0;
-    chartPadding = 30;
+    chartPadding = 35;
     
 var xScale = d3.scale.linear()
             .domain([minScore, maxScore])
             .range([minScore, w]);
 
 var yScale = d3.scale.linear()
-            .domain([0, h])
+            .domain([0, 2*h])
             .range([h, 0]);
 
 var xAxis = d3.svg.axis()
@@ -211,11 +213,15 @@ var cutoffLine = chart.append('svg:line')
     .attr('x1', xScale(cutoffITA))
     .attr('x2', xScale(cutoffITA))
     .attr('y1', 0)
-    .attr('y2', h);
+    .attr('y2', h)
+    .style('stroke-dasharray', '5,5')
+    .style('stroke-width', '2');
+
 
 var cutoffLabel = chart.append('text')
     .attr('class', 'cutoff-label')
-    .attr('transform', 'translate(' + xScale( cutoffITA + 5 ) + ',10)')
+    .attr('transform', 'translate(' + xScale( cutoffITA + 10 ) + ',10)')
+    .style('font-family', 'roboto')
     .text('cutoff: ' + cutoffITA);
     
 var binCols = chart.selectAll('g.bin')
@@ -240,7 +246,7 @@ function redraw() {
                 .style('fill', 'purple');
         })
         .attr('cy', function(d,i) {
-            return h - (i * (radius*2 + padding) + padding*2) 
+            return yScale(i * (radius*2 + padding) + padding*2);
         })
         .each('end', function() {
             d3.select(this)
@@ -281,12 +287,13 @@ var removeSelectedCandidates = function() {
     var numSelected = 0
         binIdx = 0;
     for(var binIdx=data.length - 1 ; numSelected < numITA && binIdx >= 0 ; binIdx--) {
-        while(numSelected < numITA && data[binIdx].length > 0) {
+        var numElementsBin = data[binIdx].length;
+        numSelected += numElementsBin;
+        for(var idx = 0; idx < numElementsBin; idx++) {
             data[binIdx].shift();
-            numSelected++;
         }
     }
-    cutoffITA = binIdx * maxScore / bins;
+    cutoffITA = (binIdx + 1) * maxScore / bins;
     updateITACutoffLine();
     removeCircles();
 }
