@@ -1,6 +1,5 @@
-# canadaita
-Visualization for Canadian ITA
+# About
+Visualization for Canadian ITA draws using [D3](https://d3js.org/).
 
-# Technologies used
-
-* D3
+# Contact
+Deadbird - deadbird.bluebird@gmail.com
