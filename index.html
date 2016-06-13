@@ -27,20 +27,52 @@ circle {
     font-family: sans-serif;
     font-size: 11px;
 }
+.cutoff-label {
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+}
+#main-options button {
+  color: #fff;
+  background-color: #6496c8;
+  border: none;
+  border-radius: 15px;
+  padding: 10px;;
+  box-shadow: 0 3px #27496d;
+}
+
+#main-options button:hover,
+#main-options button.hover {
+  background-color: #417cb8
+}
+
+#main-options button:active,
+#main-options button.active {
+  background-color: #417cb8;
+  box-shadow: 0 5px #27496d;
+  transform: translateY(2px);
+}
+
     </style>
   </head>
   <body>
 <div id="parameters">
+</div>
+<div id="main-options">
+    <button id="drawButton" title="New Draw" onclick="makeDraw()">
+        New Draw
+    </button>
 </div>
 
 
     <script type="text/javascript">
 // Create parameter range sliders
 paramConfigs= [
+  { name: 'numInitialCandidates', min: 100, max: 50000, value: 10000 },
   { name: 'muLow', min: 0, max: 600, value: 420 },
-  { name: 'sigmaLow', min: 30, max: 100, value: 50 },
+  { name: 'sigmaLow', min: 30, max: 100, value: 1000 },
   { name: 'muHigh', min: 600, max: 1200, value: 1000 },
-  { name: 'sigmaHigh', min: 30, max: 100, value: 50 },
+  { name: 'sigmaHigh', min: 30, max: 100, value: 100 },
   { name: 'delay', min: 0, max: 1000, value: 10 },
   { name: 'numNewLow', min: 0, max: 2000, value: 1000 },
   { name: 'numNewHigh', min: 0, max: 2000, value: 1000 },
@@ -78,10 +110,12 @@ parameters.on('change', function() {
 // data generator
 var minScore = 0,
     maxScore = 1200,
-    binWidth = 5,
-    numNewLow = 1000,
-    numNewHigh = 1000,
-    bins = (maxScore - minScore) / binWidth,
+    numNewLow = 200,
+    numNewHigh = 200,
+    numITA = 200,
+    numInitialCandidates = 3000,
+    cutoffITA = 483,
+    bins = 240,
     numParallelSample = 5, // number of points to sample in parallel
     gaussianLow = null,
     gaussianHigh = null;
@@ -93,7 +127,7 @@ var updateGaussians = function() {
     var gaussianHighSigma = +d3.select('#range-sigmaHigh').property('value');
     var clamp = function(gen) {
       return function() {
-        return ~~Math.max(minScore, Math.min(gen(), maxScore));
+        return ~~Math.max(minScore, Math.min(gen(), maxScore - 1e-10));
       };
     }
     gaussianLow = clamp(d3.random.normal(gaussianLowMu, gaussianLowSigma));
@@ -108,10 +142,10 @@ generator = function() {
         gaussianLow() : gaussianHigh();
 };
 
-var delay = 10,
-    exitDelay = 500,
-    w = 600,
-    h = 400,
+var delay = 100,
+    exitDelay = 1000,
+    w = 800,
+    h = 600,
     binWidth = w/bins,
     radius = 1.5,
     padding = 0;
@@ -158,12 +192,17 @@ chart.append('svg:line')
     .attr('y1', h)
     .attr('y2', h);
 
-// middle line
-chart.append('svg:line')
-    .attr('x1', xScale(maxScore/2))
-    .attr('x2', xScale(maxScore/2))
+// previous cutoff
+var cutoffLine = chart.append('svg:line')
+    .attr('x1', xScale(cutoffITA))
+    .attr('x2', xScale(cutoffITA))
     .attr('y1', 0)
     .attr('y2', h);
+
+var cutoffLabel = chart.append('text')
+    .attr('class', 'cutoff-label')
+    .attr('transform', 'translate(' + xScale( cutoffITA + 5 ) + ',10)')
+    .text('cutoff: ' + cutoffITA);
     
 var binCols = chart.selectAll('g.bin')
     .data(data)
@@ -175,45 +214,109 @@ function redraw() {
     var dots = binCols.selectAll('circle')
         .data(function(d) { return d });
         
-    dots.enter().append('svg:circle')
+    var newdots = dots.enter().append('svg:circle')
         .attr('cx', binWidth/2)
         .attr('cy', 0)
         .attr('r', radius);
         
-    dots.transition()
+    newdots.transition()
         .duration(delay)
-        .ease('bounce')
+        .each('start', function() {
+            d3.select(this)
+                .style('fill', 'purple');
+        })
         .attr('cy', function(d,i) {
             return h - (i * (radius*2 + padding) + padding*2) 
+        })
+        .each('end', function() {
+            d3.select(this)
+                .transition()
+                .delay(1000)
+                .style('fill', 'steelblue');
         });
+}
 
+var removeCircles = function() {
+    var dots = binCols.selectAll('circle')
+        .data(function(d) { return d });
     dots.exit()
         .transition()
         .duration(exitDelay)
         .each('start', function() {
             d3.select(this)
-                .style('color', 'red');
+                .style('fill', 'red');
         })
         .attr('cy', h + chartPadding)
         .remove();
 }
 
-var target = numNewLow + numNewHigh,
-    counter = 0,
-    intervalId = setInterval(function() {
-        for(var i=0 ; i < numParallelSample && counter <= target; i++) {
-            var number = generator();
-            // console.log(number);
-            bin = ~~(number / maxScore * bins);
-            data[bin].push(number);
-            counter++;
+var updateITACutoffLine = function() {
+    cutoffLine.transition()
+        .duration(exitDelay)
+        .attr('x1', xScale(cutoffITA))
+        .attr('x2', xScale(cutoffITA));
+
+    cutoffLabel.transition()
+        .duration(exitDelay)
+        .attr('transform', 'translate(' + xScale( cutoffITA + 5 ) + ',10)')
+        .text('cutoff: ' + cutoffITA);
+};
+
+// Select Candidates
+var removeSelectedCandidates = function() {
+    var numSelected = 0
+        binIdx = 0;
+    for(var binIdx=data.length - 1 ; numSelected < numITA && binIdx >= 0 ; binIdx--) {
+        while(numSelected < numITA && data[binIdx].length > 0) {
+            data[binIdx].shift();
+            numSelected++;
         }
-        redraw();
-        if (counter > target) {
-            clearInterval(intervalId);
-        }
-    }, delay);
-    
+    }
+    cutoffITA = binIdx * maxScore / bins;
+    updateITACutoffLine();
+    removeCircles();
+}
+
+var addNewCandidates = function() {
+    // Add potential candidates
+    var numNewCandidates = numNewLow + numNewHigh,
+        counter = 0,
+        intervalId = setInterval(function() {
+            for(var i=0 ; i < numParallelSample && counter <= numNewCandidates; i++) {
+                var crsScore = generator();
+                bin = ~~(crsScore / maxScore * bins);
+                if(bin > 239) {
+                    console.log('wtF!!');
+                }
+                data[bin].push(crsScore);
+                counter++;
+            }
+            redraw();
+            if (counter > numNewCandidates) {
+                clearInterval(intervalId);
+                setTimeout(removeSelectedCandidates, exitDelay);
+            }
+        }, delay);
+}
+
+// Add initial candidates
+var numInitial = 0;
+while(numInitial < numInitialCandidates) {
+    var crsScore = generator();
+    // Perform rejection sampling
+    if (crsScore >= cutoffITA) continue;
+    bin = ~~(crsScore / maxScore * bins);
+    data[bin].push(crsScore);
+    numInitial++;
+}
+console.log(numInitial)
+redraw();
+
+window.makeDraw = function() {
+    addNewCandidates();
+};
+
+
     </script>
   </body>
 </html>
