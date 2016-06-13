@@ -33,8 +33,11 @@ circle {
     text-align: center;
 }
 #main-options button {
+  margin: 10px 10px;
+  min-width: 100px;
+  height: 40px;
   color: #fff;
-  background-color: #6496c8;
+  background-color: forestgreen;
   border: none;
   border-radius: 15px;
   padding: 10px;;
@@ -43,12 +46,12 @@ circle {
 
 #main-options button:hover,
 #main-options button.hover {
-  background-color: #417cb8
+  background-color: green
 }
 
 #main-options button:active,
 #main-options button.active {
-  background-color: #417cb8;
+  background-color: darkgreen;
   box-shadow: 0 5px #27496d;
   transform: translateY(2px);
 }
@@ -58,32 +61,38 @@ circle {
   <body>
 <div id="parameters">
 </div>
-<div id="main-options">
-    <button id="drawButton" title="New Draw" onclick="makeDraw()">
-        New Draw
+<div id="main-options" style="text-align:center">
+    <button id="drawButton"
+        title="Initialize Applicants"
+        onclick="buttonPressed()">
+            Initialize Applicants
     </button>
+</div>
+<div>
+    <div id="chart" style="display:inline-block"></div>
 </div>
 
 
     <script type="text/javascript">
 // Create parameter range sliders
 paramConfigs= [
-  { name: 'numInitialCandidates', min: 100, max: 50000, value: 10000 },
-  { name: 'muLow', min: 0, max: 600, value: 420 },
-  { name: 'sigmaLow', min: 30, max: 100, value: 1000 },
-  { name: 'muHigh', min: 600, max: 1200, value: 1000 },
-  { name: 'sigmaHigh', min: 30, max: 100, value: 100 },
-  { name: 'delay', min: 0, max: 1000, value: 10 },
-  { name: 'numNewLow', min: 0, max: 2000, value: 1000 },
-  { name: 'numNewHigh', min: 0, max: 2000, value: 1000 },
-  { name: 'numITA', min: 0, max: 5000, value: 800 },
+  { text: 'Initial applicants',  name: 'numInitialCandidates', min: 100, max: 10000, value: 5000},
+  { text: 'Avg CRS w/o 600 bonus points', name: 'muLow', min: 0, max: 600, value: 400 },
+  { text: 'Avg CRS with 600 bonus points', name: 'muHigh', min: 600, max: 1200, value: 950 },
+  { text: 'Std dev CRS points', name: 'stddev', min: 20, max: 200, value: 80 },
+  { text: 'New applicants w/o 600 bonus pts', name: 'numNewLow', min: 0, max: 2000, value: 800 },
+  { text: 'New applicants with 600 bonus pts', name: 'numNewHigh', min: 0, max: 2000, value: 500 },
+  { text: 'Number of ITAs issued', name: 'numITA', min: 0, max: 5000, value: 800 },
+  { text: 'Animation Delay', name: 'delay', min: 0, max: 200, value: 50 },
 ];
 
 var parameters = d3.select('#parameters')
-    .selectAll('p')
+    .selectAll('div')
     .data(paramConfigs)
     .enter()
-    .append('p');
+    .append('div')
+    .style('display', 'inline-block')
+    .style('margin', '5px');
             
 parameters.append('label')
           .attr('for', function(d) {return 'range-' + d.name;})
@@ -92,7 +101,7 @@ parameters.append('label')
           .style('text-align', 'right')
           .style('font-size', '12px')
           .style('font-weight', 'bold')
-          .text(function(d) { return d.name + ' = ' + d.value; });
+          .text(function(d) { return d.text + ' = ' + d.value; });
 
 parameters.append('input')
           .attr('type', 'range')
@@ -101,49 +110,54 @@ parameters.append('input')
           .attr('id', function(d) { return 'range-' + d.name; })
           .attr('value', function(d) { return d.value; });
 
+// values
+var minScore = 0,
+    maxScore = 1200,
+    bins = 240,
+    numParallelSample = 5, // number of points to sample in parallel
+    cutoffITA = 483,
+    numITA = null,
+    numInitialCandidates = null,
+    numNewLow = null,
+    numNewHigh = null,
+    gaussianLow = null,
+    gaussianHigh = null,
+    stddev = null;
+
 parameters.on('change', function() {
   var value = d3.select(this).select('input').property('value');
   var label = d3.select(this).select('label');
-  label.text(function(d) { return d.name + ' = ' + value; });
+  label.text(function(d) { return d.text + ' = ' + value; });
+  // Update global variable values
+  window[this.__data__.name] = +value;
+  updateGaussians();
 });
 
-// data generator
-var minScore = 0,
-    maxScore = 1200,
-    numNewLow = 200,
-    numNewHigh = 200,
-    numITA = 200,
-    numInitialCandidates = 3000,
-    cutoffITA = 483,
-    bins = 240,
-    numParallelSample = 5, // number of points to sample in parallel
-    gaussianLow = null,
-    gaussianHigh = null;
-
 var updateGaussians = function() {
-    var gaussianLowMu = +d3.select('#range-muLow').property('value');
-    var gaussianLowSigma = +d3.select('#range-sigmaLow').property('value');
-    var gaussianHighMu = +d3.select('#range-muHigh').property('value');
-    var gaussianHighSigma = +d3.select('#range-sigmaHigh').property('value');
-    var clamp = function(gen) {
+    var clamp = function(gen, min, max) {
       return function() {
-        return ~~Math.max(minScore, Math.min(gen(), maxScore - 1e-10));
+        return ~~Math.max(min, Math.min(gen(), max - 1e-10));
       };
     }
-    gaussianLow = clamp(d3.random.normal(gaussianLowMu, gaussianLowSigma));
-    gaussianHigh = clamp(d3.random.normal(gaussianHighMu, gaussianHighSigma));
-}
+    gaussianLow = clamp(d3.random.normal(muLow, stddev), 0, 600);
+    gaussianHigh = clamp(d3.random.normal(muHigh, stddev), 600, 1200);
+};
+
+// Perform initializations
+parameters.each(function() {
+  var value = d3.select(this).select('input').property('value');
+  window[this.__data__.name] = +value;
+});
 updateGaussians();
 
 var data = d3.range(bins).map(function() { return [] });
 
 generator = function() {
-    return Math.random() > (numNewLow/(numNewLow + numNewHigh))  ? 
+    return Math.random() < (numNewLow/(numNewLow + numNewHigh))  ? 
         gaussianLow() : gaussianHigh();
 };
 
-var delay = 100,
-    exitDelay = 1000,
+var exitDelay = 1000,
     w = 800,
     h = 600,
     binWidth = w/bins,
@@ -167,7 +181,7 @@ var yAxis = d3.svg.axis()
                 .scale(yScale)
                 .orient('left');
 // chart
-var chart = d3.select('body').append('svg:svg')
+var chart = d3.select('#chart').append('svg:svg')
     .attr('width', w + chartPadding * 2)
     .attr('height', h + chartPadding * 2)
   .append('svg:g')
@@ -300,19 +314,27 @@ var addNewCandidates = function() {
 }
 
 // Add initial candidates
-var numInitial = 0;
-while(numInitial < numInitialCandidates) {
-    var crsScore = generator();
-    // Perform rejection sampling
-    if (crsScore >= cutoffITA) continue;
-    bin = ~~(crsScore / maxScore * bins);
-    data[bin].push(crsScore);
-    numInitial++;
+var buttonPressed = function() {
+    var button = d3.select('#drawButton');
+    if (!button.classed('initialized')) {
+        var numInitial = 0;
+        while(numInitial < numInitialCandidates) {
+            var crsScore = generator();
+            // Perform rejection sampling
+            if (crsScore >= cutoffITA) continue;
+            bin = ~~(crsScore / maxScore * bins);
+            data[bin].push(crsScore);
+            numInitial++;
+        }
+        redraw();
+        button.text('New Draw');
+        button.classed('initialized', true);
+    } else {
+        makeDraw();
+    }
 }
-console.log(numInitial)
-redraw();
 
-window.makeDraw = function() {
+makeDraw = function() {
     addNewCandidates();
 };
 
